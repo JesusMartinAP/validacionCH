@@ -1,0 +1,156 @@
+import concurrent.futures # Importar el módulo concurrent.futures
+import tkinter as tk
+from tkinter import messagebox # Importar el módulo messagebox
+from datetime import datetime
+import requests
+from bs4 import BeautifulSoup
+from openpyxl import Workbook
+import webbrowser
+from tkinter import ttk
+import threading
+
+# Variables globales
+proceso_en_ejecucion = False
+estado_codigos = []
+total_codigos = 0
+codigos_procesados = 0
+
+# Función para obtener el estado de un producto, su precio y la cantidad de imágenes
+def obtener_estado_y_precio(codigo_padre):
+    url_base = f'https://www.marathon.cl/{codigo_padre}.html'
+    try:
+        response = requests.get(url_base)
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as err:
+        if response.status_code == 404:
+            return codigo_padre, "ERROR 404", None, None
+        return codigo_padre, f"Error de conexión: {err}", None, None
+    
+    soup = BeautifulSoup(response.content, 'html.parser')
+    
+    # Buscar el botón seleccionado
+    boton_seleccionado = soup.find('button', {'aria-describedby': lambda x: x and 'seleccionado' in x})
+    if boton_seleccionado:
+        estado = "Disponible" if 'disabled' not in boton_seleccionado.attrs else "Agotado"
+    else:
+        estado = "Agotado"
+    
+    # Extraer el precio
+    precio_element = soup.select_one('span.sales > span.value')
+    if precio_element:
+        precio = precio_element.text.strip()
+    else:
+        precio = "Precio no disponible"
+    
+    # Contar la cantidad de imágenes
+    imagenes = soup.select('img.galley_img')
+    cantidad_imagenes = len(imagenes)
+    
+    return codigo_padre, estado, precio, cantidad_imagenes
+
+# Función para procesar los códigos y guardar en Excel
+def procesar_codigos(codigos):
+    global proceso_en_ejecucion, estado_codigos, total_codigos, codigos_procesados
+    total_codigos = len(codigos)
+    start_time = datetime.now()
+
+    def obtener_estado_concurrente(codigo_padre):
+        return obtener_estado_y_precio(codigo_padre)
+    
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(obtener_estado_concurrente, codigo): codigo for codigo in codigos}
+        for future in concurrent.futures.as_completed(futures):
+            codigo = futures[future]
+            try:
+                codigo_padre, estado, precio, cantidad_imagenes = future.result()
+            except Exception as exc:
+                estado = f"Error: {exc}"
+                precio = "Precio no disponible"
+                cantidad_imagenes = "Cantidad de imágenes no disponible"
+            estado_codigos.append((codigo_padre, estado, precio, cantidad_imagenes))
+            codigos_procesados += 1
+            # Actualizar información en la interfaz
+            elapsed_time = datetime.now() - start_time
+            tiempo_transcurrido = str(elapsed_time).split('.')[0]  # Formato HH:MM:SS
+            info_estado.set(f"Procesando código {codigos_procesados}/{total_codigos} - Tiempo transcurrido: {tiempo_transcurrido}")
+            barra_progreso['value'] = (codigos_procesados / total_codigos) * 100
+            root.update_idletasks()
+
+    if proceso_en_ejecucion:
+        guardar_resultados()
+
+# Función para pausar el proceso
+def pausar_proceso():
+    global proceso_en_ejecucion
+    proceso_en_ejecucion = False
+    messagebox.showinfo("Proceso pausado", "Se ha pausado el proceso. Puede continuar luego.")
+
+# Función para detener el proceso
+def detener_proceso():
+    global proceso_en_ejecucion
+    proceso_en_ejecucion = False
+    guardar_resultados()
+    messagebox.showinfo("Proceso detenido", "Se ha detenido el proceso.")
+    root.quit()
+
+# Función para guardar los resultados en Excel
+def guardar_resultados():
+    global proceso_en_ejecucion
+    # Guardar en Excel
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Control Stock Web"
+    ws['A1'] = "CODIGO"
+    ws['B1'] = "STATUS WEB"
+    ws['C1'] = "PRECIO"
+    ws['D1'] = "Cant. Img"
+    for i, (codigo, estado, precio, cantidad_imagenes) in enumerate(estado_codigos, start=2):
+        ws[f'A{i}'] = codigo
+        ws[f'B{i}'] = estado
+        ws[f'C{i}'] = precio
+        ws[f'D{i}'] = cantidad_imagenes
+
+    # Guardar archivo
+    fecha_actual = datetime.now().strftime("%Y-%m-%d")
+    nombre_archivo = f"Control Stock Web {fecha_actual}.xlsx"
+    wb.save(nombre_archivo)
+    messagebox.showinfo("Proceso completado", f"Se ha guardado el archivo '{nombre_archivo}' con los estados, precios y cantidad de imágenes de los productos.")
+    # Abrir archivo Excel
+    webbrowser.open(nombre_archivo)
+
+# Función para iniciar el procesamiento en un hilo separado
+def iniciar_procesamiento():
+    global proceso_en_ejecucion
+    if not proceso_en_ejecucion:
+        proceso_en_ejecucion = True
+        codigos = entry_codigos.get("1.0", "end").split()
+        threading.Thread(target=procesar_codigos, args=(codigos,)).start()
+
+# Interfaz gráfica
+root = tk.Tk()
+root.title("Verificar Stock Web")
+
+# Entrada de códigos
+tk.Label(root, text="Ingrese los códigos separados por espacio:").pack()
+entry_codigos = tk.Text(root, height=10, width=50)
+entry_codigos.pack()
+
+# Botón de iniciar procesamiento
+tk.Button(root, text="Iniciar Procesamiento", command=iniciar_procesamiento).pack()
+
+# Botón de detener
+btn_detener = tk.Button(root, text="Detener", command=detener_proceso)
+btn_detener.pack()
+
+# Información de estado y progreso
+info_estado = tk.StringVar()
+tk.Label(root, textvariable=info_estado).pack()
+
+barra_progreso = ttk.Progressbar(root, length=200, mode='determinate')
+barra_progreso.pack()
+
+root.mainloop()
+
+## Ejecutar el script y probar la interfaz gráfica
+# Para probar la interfaz gráfica, ejecutar el script index.py y realizar las pruebas necesarias.
+# Ingresar los códigos de productos en la entrada de texto y presionar el botón "Iniciar Procesamiento".
