@@ -150,7 +150,3 @@ barra_progreso = ttk.Progressbar(root, length=200, mode='determinate')
 barra_progreso.pack()
 
 root.mainloop()
-
-## Ejecutar el script y probar la interfaz gráfica
-# Para probar la interfaz gráfica, ejecutar el script index.py y realizar las pruebas necesarias.
-# Ingresar los códigos de productos en la entrada de texto y presionar el botón "Iniciar Procesamiento".
