@@ -1,6 +1,6 @@
-import concurrent.futures # Importar el módulo concurrent.futures
+import concurrent.futures
 import tkinter as tk
-from tkinter import messagebox # Importar el módulo messagebox
+from tkinter import messagebox
 from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
@@ -18,34 +18,32 @@ codigos_procesados = 0
 # Función para obtener el estado de un producto, su precio y la cantidad de imágenes
 def obtener_estado_y_precio(codigo_padre):
     url_base = f'https://www.marathon.cl/{codigo_padre}.html'
+    estado = "Agotado"
+    precio = "Precio no disponible"
+    cantidad_imagenes = 0
+
     try:
         response = requests.get(url_base)
         response.raise_for_status()
-    except requests.exceptions.HTTPError as err:
-        if response.status_code == 404:
-            return codigo_padre, "ERROR 404", None, None
-        return codigo_padre, f"Error de conexión: {err}", None, None
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Verificar disponibilidad del producto
+        boton_seleccionado = soup.select_one("button[aria-describedby*='seleccionado']")
+        if boton_seleccionado and 'disabled' not in boton_seleccionado.get('class', []):
+            estado = "Disponible"
+
+        # Extraer el precio
+        precio_element = soup.select_one('span.sales > span.value')
+        if precio_element:
+            precio = precio_element.text.strip()
+        
+        # Contar la cantidad de imágenes
+        imagenes = soup.select('img.galley_img')
+        cantidad_imagenes = len(imagenes)
     
-    soup = BeautifulSoup(response.content, 'html.parser')
-    
-    # Buscar el botón seleccionado
-    boton_seleccionado = soup.find('button', {'aria-describedby': lambda x: x and 'seleccionado' in x})
-    if boton_seleccionado:
-        estado = "Disponible" if 'disabled' not in boton_seleccionado.attrs else "Agotado"
-    else:
-        estado = "Agotado"
-    
-    # Extraer el precio
-    precio_element = soup.select_one('span.sales > span.value')
-    if precio_element:
-        precio = precio_element.text.strip()
-    else:
-        precio = "Precio no disponible"
-    
-    # Contar la cantidad de imágenes
-    imagenes = soup.select('img.galley_img')
-    cantidad_imagenes = len(imagenes)
-    
+    except requests.RequestException as e:
+        estado = f"Error: {e}"
+
     return codigo_padre, estado, precio, cantidad_imagenes
 
 # Función para procesar los códigos y guardar en Excel
