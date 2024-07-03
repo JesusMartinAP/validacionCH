@@ -2,8 +2,7 @@ import concurrent.futures
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 from openpyxl import Workbook
 import webbrowser
 from tkinter import ttk
@@ -15,36 +14,48 @@ estado_codigos = []
 total_codigos = 0
 codigos_procesados = 0
 
-# Función para obtener el estado de un producto, su precio y la cantidad de imágenes
+# Función para obtener el estado de un producto, su precio y la cantidad de imágenes usando Playwright
 def obtener_estado_y_precio(codigo_padre):
     url_base = f'https://www.marathon.cl/{codigo_padre}.html'
-    estado = "Agotado"
-    precio = "Precio no disponible"
-    cantidad_imagenes = 0
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        try:
+            page.goto(url_base)
+            page.wait_for_selector("body", timeout=5000)  # Esperar a que el cuerpo de la página se cargue
 
-    try:
-        response = requests.get(url_base)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
+            # Verificar si la página redirige al inicio (indicador: URL de redirección)
+            if page.url == "https://www.marathon.cl/home/":
+                browser.close()
+                return codigo_padre, "Web no encontrada", "Precio no disponible", "Cantidad de imágenes no disponible"
 
-        # Verificar disponibilidad del producto
-        boton_seleccionado = soup.select_one("button[aria-describedby*='seleccionado']")
-        if boton_seleccionado and 'disabled' not in boton_seleccionado.get('class', []):
-            estado = "Disponible"
+            # Buscar los botones de talla y determinar si están seleccionados
+            botones_talla = page.query_selector_all("button.size-attribute.swatchable.selectable.swatch-square")
+            estado = "Agotado"
+            for boton in botones_talla:
+                if "selected-assistive-text" in boton.inner_html():
+                    estado = "Disponible" if not boton.is_disabled() else "Agotado"
+                    break
 
-        # Extraer el precio
-        precio_element = soup.select_one('span.sales > span.value')
-        if precio_element:
-            precio = precio_element.text.strip()
-        
-        # Contar la cantidad de imágenes
-        imagenes = soup.select('img.galley_img')
-        cantidad_imagenes = len(imagenes)
-    
-    except requests.RequestException as e:
-        estado = f"Error: {e}"
-
-    return codigo_padre, estado, precio, cantidad_imagenes
+            # Extraer el precio
+            try:
+                precio_element = page.query_selector('span.sales > span.value')
+                precio = precio_element.inner_text().strip() if precio_element else "Precio no disponible"
+            except:
+                precio = "Precio no disponible"
+            
+            # Contar la cantidad de imágenes
+            try:
+                imagenes = page.query_selector_all('img.galley_img')
+                cantidad_imagenes = len(imagenes)
+            except:
+                cantidad_imagenes = "Cantidad de imágenes no disponible"
+            
+            browser.close()
+            return codigo_padre, estado, precio, cantidad_imagenes
+        except Exception as e:
+            browser.close()
+            return codigo_padre, f"Error: {e}", "Precio no disponible", "Cantidad de imágenes no disponible"
 
 # Función para procesar los códigos y guardar en Excel
 def procesar_codigos(codigos):
