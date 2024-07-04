@@ -13,6 +13,7 @@ proceso_en_ejecucion = False
 estado_codigos = []
 total_codigos = 0
 codigos_procesados = 0
+lock = threading.Lock()  # Para controlar el acceso concurrente a las variables globales
 
 # Función para obtener el estado de un producto, su precio y la cantidad de imágenes usando Playwright
 def obtener_estado_y_precio(codigo_padre):
@@ -66,9 +67,11 @@ def procesar_codigos(codigos):
     def obtener_estado_concurrente(codigo_padre):
         return obtener_estado_y_precio(codigo_padre)
     
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:  # Ajustar el número de trabajadores según sea necesario
         futures = {executor.submit(obtener_estado_concurrente, codigo): codigo for codigo in codigos}
         for future in concurrent.futures.as_completed(futures):
+            if not proceso_en_ejecucion:
+                break
             codigo = futures[future]
             try:
                 codigo_padre, estado, precio, cantidad_imagenes = future.result()
@@ -76,8 +79,10 @@ def procesar_codigos(codigos):
                 estado = f"Error: {exc}"
                 precio = "Precio no disponible"
                 cantidad_imagenes = "Cantidad de imágenes no disponible"
-            estado_codigos.append((codigo_padre, estado, precio, cantidad_imagenes))
-            codigos_procesados += 1
+            with lock:
+                estado_codigos.append((codigo_padre, estado, precio, cantidad_imagenes))
+                codigos_procesados += 1
+
             # Actualizar información en la interfaz
             elapsed_time = datetime.now() - start_time
             tiempo_transcurrido = str(elapsed_time).split('.')[0]  # Formato HH:MM:SS
@@ -129,10 +134,12 @@ def guardar_resultados():
 
 # Función para iniciar el procesamiento en un hilo separado
 def iniciar_procesamiento():
-    global proceso_en_ejecucion
+    global proceso_en_ejecucion, codigos_procesados, estado_codigos
     if not proceso_en_ejecucion:
         proceso_en_ejecucion = True
         codigos = entry_codigos.get("1.0", "end").split()
+        codigos_procesados = 0
+        estado_codigos = []
         threading.Thread(target=procesar_codigos, args=(codigos,)).start()
 
 # Interfaz gráfica
