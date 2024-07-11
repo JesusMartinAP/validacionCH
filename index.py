@@ -7,6 +7,10 @@ from openpyxl import Workbook
 import webbrowser
 from tkinter import ttk
 import threading
+import logging
+
+# Configuración de logs
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Variables globales
 proceso_en_ejecucion = False
@@ -17,6 +21,7 @@ lock = threading.Lock()  # Para controlar el acceso concurrente a las variables 
 
 # Función para obtener el estado de un producto, su precio y la cantidad de imágenes usando Playwright
 def obtener_estado_y_precio(codigo_padre):
+    logging.info(f'Procesando código: {codigo_padre}')
     url_base = f'https://www.marathon.cl/{codigo_padre}.html'
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -28,6 +33,7 @@ def obtener_estado_y_precio(codigo_padre):
             # Verificar si la página redirige al inicio (indicador: URL de redirección)
             if page.url == "https://www.marathon.cl/home/":
                 browser.close()
+                logging.warning(f'Web no encontrada para código: {codigo_padre}')
                 return codigo_padre, "Web no encontrada", "Precio no disponible", "Cantidad de imágenes no disponible"
 
             # Buscar los botones de talla y determinar si están seleccionados
@@ -53,9 +59,11 @@ def obtener_estado_y_precio(codigo_padre):
                 cantidad_imagenes = "Cantidad de imágenes no disponible"
             
             browser.close()
+            logging.info(f'Código {codigo_padre} procesado correctamente.')
             return codigo_padre, estado, precio, cantidad_imagenes
         except Exception as e:
             browser.close()
+            logging.error(f'Error procesando código {codigo_padre}: {e}')
             return codigo_padre, f"Error: {e}", "Precio no disponible", "Cantidad de imágenes no disponible"
 
 # Función para procesar los códigos y guardar en Excel
