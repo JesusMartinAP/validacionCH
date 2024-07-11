@@ -21,7 +21,6 @@ lock = threading.Lock()  # Para controlar el acceso concurrente a las variables 
 
 # Función para obtener el estado de un producto, su precio y la cantidad de imágenes usando Playwright
 def obtener_estado_y_precio(codigo_padre):
-    logging.info(f'Procesando código: {codigo_padre}')
     url_base = f'https://www.marathon.cl/{codigo_padre}.html'
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -145,7 +144,7 @@ def iniciar_procesamiento():
     global proceso_en_ejecucion, codigos_procesados, estado_codigos
     if not proceso_en_ejecucion:
         proceso_en_ejecucion = True
-        codigos = entry_codigos.get("1.0", "end").split()
+        codigos = entry_codigos.get("1.0", "end").strip().split()  # Añadir .strip() para eliminar espacios en blanco al final
         codigos_procesados = 0
         estado_codigos = []
         threading.Thread(target=procesar_codigos, args=(codigos,)).start()
