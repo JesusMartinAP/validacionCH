@@ -9,6 +9,7 @@ from tkinter import ttk
 import threading
 import logging
 import subprocess
+import os
 
 # Configuración de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
