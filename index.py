@@ -8,6 +8,7 @@ import webbrowser
 from tkinter import ttk
 import threading
 import logging
+import subprocess
 
 # Configuración de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,6 +19,19 @@ estado_codigos = []
 total_codigos = 0
 codigos_procesados = 0
 lock = threading.Lock()  # Para controlar el acceso concurrente a las variables globales
+
+def ensure_playwright_browsers_installed():
+    try:
+        with sync_playwright() as p:
+            # Intenta abrir el navegador para verificar si está instalado
+            p.chromium.launch(headless=True).close()
+    except Exception as e:
+        # Si falla, intenta instalar los navegadores
+        if "Executable doesn't exist" in str(e):
+            print("Instalando navegadores de Playwright...")
+            subprocess.run(["playwright", "install"], check=True)
+
+ensure_playwright_browsers_installed()
 
 # Función para obtener el estado de un producto, su precio y la cantidad de imágenes usando Playwright
 def obtener_estado_y_precio(codigo_padre):
@@ -79,7 +93,7 @@ def procesar_codigos(codigos):
         for future in concurrent.futures.as_completed(futures):
             if not proceso_en_ejecucion:
                 break
-            codigo = futures[future]
+            codigo_padre = futures[future]  # Asignar código_padre aquí para asegurarse de que siempre tenga un valor
             try:
                 codigo_padre, estado, precio, cantidad_imagenes = future.result()
             except Exception as exc:
